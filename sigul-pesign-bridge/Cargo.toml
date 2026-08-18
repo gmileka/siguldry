@@ -47,7 +47,7 @@ version = "3"
 
 [dependencies.tokio]
 version = "1.27"
-features = ["io-util", "macros", "net", "rt", "signal", "time", "process", "fs"]
+features = ["io-util", "macros", "net", "rt", "signal", "sync", "time", "process", "fs"]
 
 # Used for the CancellationToken
 [dependencies.tokio-util]

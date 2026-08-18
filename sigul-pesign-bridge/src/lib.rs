@@ -10,6 +10,7 @@ pub(crate) mod pesign;
 mod service;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Context as AnyhowContext;
 #[doc(hidden)]
@@ -21,7 +22,20 @@ pub use service::listen;
 pub struct Context {
     pub(crate) runtime_directory: PathBuf,
     pub(crate) config: config::Config,
-    pub(crate) sigul_client: siguldry::v1::client::Client,
+    /// The Sigul client, used to forward signing requests to a Sigul server.
+    ///
+    /// This is `None` when `config.xsign_enabled` or `config.self_sign_enabled`
+    /// is set, since signing is done locally and the Sigul TLS credentials are
+    /// not required to exist.
+    pub(crate) sigul_client: Option<siguldry::v1::client::Client>,
+    /// Serializes `az login` calls made ahead of `az xsign` invocations.
+    ///
+    /// Multiple signing requests can be in flight concurrently (e.g. several
+    /// builds on the same pod), but `az login` writes to a shared MSAL token
+    /// cache on disk; running it concurrently risks corrupting that cache. This
+    /// lock ensures only one login happens at a time. It does not serialize the
+    /// `az xsign sign-file` calls themselves, only the login step.
+    pub(crate) xsign_login_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Context {
@@ -39,25 +53,30 @@ impl Context {
             ));
         }
 
-        let tls_config = siguldry::v1::client::TlsConfig::new(
-            &config.sigul.client_certificate,
-            &config.sigul.private_key,
-            None, // The expectation is the key is encrypted via systemd
-            &config.sigul.ca_certificate,
-        )
-        .context("Failed to create OpenSSL TLS configuration")?;
-        let sigul_client = siguldry::v1::client::Client::new(
-            tls_config,
-            config.sigul.bridge_hostname.clone(),
-            config.sigul.bridge_port,
-            config.sigul.server_hostname.clone(),
-            config.sigul.sigul_user_name.clone(),
-        );
+        let sigul_client = if config.xsign_enabled || config.self_sign_enabled {
+            None
+        } else {
+            let tls_config = siguldry::v1::client::TlsConfig::new(
+                &config.sigul.client_certificate,
+                &config.sigul.private_key,
+                None, // The expectation is the key is encrypted via systemd
+                &config.sigul.ca_certificate,
+            )
+            .context("Failed to create OpenSSL TLS configuration")?;
+            Some(siguldry::v1::client::Client::new(
+                tls_config,
+                config.sigul.bridge_hostname.clone(),
+                config.sigul.bridge_port,
+                config.sigul.server_hostname.clone(),
+                config.sigul.sigul_user_name.clone(),
+            ))
+        };
 
         Ok(Self {
             runtime_directory,
             config,
             sigul_client,
+            xsign_login_lock: Arc::new(tokio::sync::Mutex::new(())),
         })
     }
 }

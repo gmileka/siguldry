@@ -19,6 +19,40 @@ total_request_timeout_secs = 600
 # As such, this value should be several times smaller than `total_request_timeout_secs`.
 sigul_request_timeout_secs = 60
 
+# Optional; sign locally with `az xsign sign-file` instead of forwarding the
+# request to the Sigul server. Defaults to false.
+#
+# The ESRP signing configuration is read from `/etc/xsign`,
+# which must be provisioned outside this service.
+xsign_enabled = false
+
+# Optional; directory containing the certificate-specific xsign configuration
+# files passed to `az xsign sign-file --config-file`. For a request with
+# certificate name `certificate`, the service uses
+# `<xsign_config_dir>/certificate.json`. The file must be provisioned outside
+# this service. This setting is only used when `xsign_enabled = true`.
+#
+xsign_config_dir = "/etc/xsign"
+
+# Optional; sign locally with `pesign` and the NSS DB configured below instead
+# of forwarding the request to the Sigul server. Defaults to false.
+# `xsign_enabled` takes precedence if both settings are true.
+self_sign_enabled = false
+
+# Optional; NSS DB directory used when `self_sign_enabled = true`. `pesign`
+# signs with certificate nickname "Secure Boot Self Signing Key". Defaults to
+# "/etc/sigul-pesign-bridge/self-sign/nssdb".
+#
+self_sign_nssdb_dir = "/etc/sigul-pesign-bridge/self-sign/nssdb"
+
+# Optional; directory containing self-signing certificates for the special
+# "secure-boot-self-signing" certificate name. The service looks for
+# `secure-boot-self-signing.crt` and `secure-boot-self-signing.key` in this
+# directory. These certificates are embedded in the service for test/development.
+# Defaults to "/etc/sigul-pesign-bridge/certs".
+#
+self_sign_cert_dir = "/etc/sigul-pesign-bridge/self-sign/certs"
+
 # Configuration to connect to the Sigul server.
 [sigul]
 # The hostname of the Sigul bridge; this is used to verify the bridge's
