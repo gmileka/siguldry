@@ -29,6 +29,9 @@ use tracing::{Instrument, instrument};
 
 use crate::pesign::{self, Command, Header, Response, SignAttachedRequest};
 
+const SELF_SIGNING_CERTIFICATE_NICKNAME: &str = "Secure Boot Self Signing Key";
+const SELF_SIGNING_CERTIFICATE_NAME: &str = "secure-boot-self-signing";
+
 /// Listen on a Unix socket on the given path.
 ///
 /// This function will bind the socket and check its permissions,
@@ -436,9 +439,34 @@ async fn sign_with_xsign(
     xsign_config_dir: &std::path::Path,
     azure_config_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
-    let xsign_config_path = xsign_config_dir.join(format!("{}.json", certificate_name));
+    let requested_xsign_config_path = xsign_config_dir.join(format!("{}.json", certificate_name));
+    let xsign_config_path = requested_xsign_config_path.canonicalize().with_context(|| {
+        format!(
+            "failed to resolve xsign configuration file '{}'",
+            requested_xsign_config_path.display()
+        )
+    })?;
+    let resolved_xsign_config_dir = xsign_config_dir.canonicalize().with_context(|| {
+        format!(
+            "failed to resolve xsign configuration directory '{}'",
+            xsign_config_dir.display()
+        )
+    })?;
+    if !xsign_config_path.starts_with(&resolved_xsign_config_dir) {
+        let message = format!(
+            "xsign configuration file '{}' resolves outside configured directory '{}'",
+            requested_xsign_config_path.display(),
+            xsign_config_dir.display()
+        );
+        tracing::error!(
+            certificate_name = %certificate_name,
+            config = ?xsign_config_path,
+            "{message}"
+        );
+        return Err(anyhow!(message));
+    }
     if !xsign_config_path.is_file() {
-        let message = format!("xsign configuration file '{}' does not exist", xsign_config_path.display());
+        let message = format!("xsign configuration path '{}' is not a file", xsign_config_path.display());
         tracing::error!(
             certificate_name = %certificate_name,
             config = ?xsign_config_path,
@@ -545,7 +573,7 @@ async fn sign_with_self_signed_cert(
         .arg("-n")
         .arg(format!("sql:{}", self_sign_nssdb_dir.display()))
         .arg("-c")
-        .arg("Secure Boot Self Signing Key")
+        .arg(SELF_SIGNING_CERTIFICATE_NICKNAME)
         .arg("-i")
         .arg(output_path)
         .arg("-o")
@@ -668,25 +696,27 @@ async fn sign_attached_with_filetype(
         let request = tokio::time::timeout(
             Duration::from_secs(context.config.sigul_request_timeout_secs.get()),
             async {
-                if self_sign_enabled && request.certificate_name == "secure-boot-self-signing" {
-                    sign_with_self_signed_cert(
-                        &sigul_input,
-                        &sigul_output,
-                        &request.token_name,
-                        &request.certificate_name,
-                        &context.config.self_sign_nssdb_dir,
-                    )
-                    .await
-                } else if xsign_enabled {
-                    sign_with_xsign(
-                        &sigul_input,
-                        &sigul_output,
-                        &request.token_name,
-                        &request.certificate_name,
-                        &context.config.xsign_config_dir,
-                        &azure_config_dir,
-                    )
-                    .await
+                if self_sign_enabled || xsign_enabled {
+                    if request.certificate_name == SELF_SIGNING_CERTIFICATE_NAME {
+                        sign_with_self_signed_cert(
+                            &sigul_input,
+                            &sigul_output,
+                            &request.token_name,
+                            &request.certificate_name,
+                            &context.config.self_sign_nssdb_dir,
+                        )
+                        .await
+                    } else {
+                        sign_with_xsign(
+                            &sigul_input,
+                            &sigul_output,
+                            &request.token_name,
+                            &request.certificate_name,
+                            &context.config.xsign_config_dir,
+                            &azure_config_dir,
+                        )
+                        .await
+                    }
                 } else {
                     let input_stream =
                         tokio::fs::File::open(&sigul_input).await.with_context(|| {

@@ -64,11 +64,6 @@ pub struct Config {
     #[serde(default = "default_self_sign_nssdb_dir")]
     pub self_sign_nssdb_dir: PathBuf,
 
-    /// Directory containing self-signing certificates for the special
-    /// "secure-boot-self-signing" certificate name.
-    #[serde(default = "default_self_sign_cert_dir")]
-    pub self_sign_cert_dir: PathBuf,
-
     /// A list of signing keys available for use.
     ///
     /// Each key must be accessible to the Sigul client user in the Sigul
@@ -324,7 +319,7 @@ impl Config {
             .map(|certificate_file| {
                 if !certificate_file.exists() {
                     Err(anyhow::anyhow!(
-                        "The CA file '{}' does not exist",
+                        "The certificate file '{}' does not exist",
                         certificate_file.display()
                     ))
                 } else {
@@ -371,7 +366,6 @@ impl Default for Config {
             xsign_config_dir: default_xsign_config_dir(),
             self_sign_enabled: false,
             self_sign_nssdb_dir: default_self_sign_nssdb_dir(),
-            self_sign_cert_dir: default_self_sign_cert_dir(),
             socket_acl: vec![],
         }
     }
@@ -383,10 +377,6 @@ fn default_xsign_config_dir() -> PathBuf {
 
 fn default_self_sign_nssdb_dir() -> PathBuf {
     PathBuf::from("/etc/sigul-pesign-bridge/self-sign/nssdb")
-}
-
-fn default_self_sign_cert_dir() -> PathBuf {
-    PathBuf::from("/etc/sigul-pesign-bridge/self-sign/certs")
 }
 
 pub(crate) fn load(path: &str) -> anyhow::Result<Config> {

@@ -34,24 +34,17 @@ xsign_enabled = false
 #
 xsign_config_dir = "/etc/xsign"
 
-# Optional; sign locally with `pesign` and the NSS DB configured below instead
-# of forwarding the request to the Sigul server. Defaults to false.
-# `xsign_enabled` takes precedence if both settings are true.
+# Optional; allows local signing using the NSS DB configured below if the
+# certificate name is set to "secure-boot-self-signing". Defaults to false.
 self_sign_enabled = false
 
 # Optional; NSS DB directory used when `self_sign_enabled = true`. `pesign`
-# signs with certificate nickname "Secure Boot Self Signing Key". Defaults to
-# "/etc/sigul-pesign-bridge/self-sign/nssdb".
+# signs with the certificate nickname "Secure Boot Self Signing Key". The NSS
+# DB must contain a certificate with that exact nickname. Self-signing is used
+# only for requests whose configured `pesign_certificate_name` is
+# "secure-boot-self-signing". Defaults to "/etc/sigul-pesign-bridge/self-sign/nssdb".
 #
 self_sign_nssdb_dir = "/etc/sigul-pesign-bridge/self-sign/nssdb"
-
-# Optional; directory containing self-signing certificates for the special
-# "secure-boot-self-signing" certificate name. The service looks for
-# `secure-boot-self-signing.crt` and `secure-boot-self-signing.key` in this
-# directory. These certificates are embedded in the service for test/development.
-# Defaults to "/etc/sigul-pesign-bridge/certs".
-#
-self_sign_cert_dir = "/etc/sigul-pesign-bridge/self-sign/certs"
 
 # Configuration to connect to the Sigul server.
 [sigul]

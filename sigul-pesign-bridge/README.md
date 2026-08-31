@@ -57,11 +57,11 @@ self_sign_enabled = false
 # Directory containing certificate-specific `az xsign` JSON configuration.
 xsign_config_dir = "/etc/xsign"
 
-# NSS DB used by `pesign` when `self_sign_enabled = true`.
+# NSS DB used by `pesign` when `self_sign_enabled = true`. It must contain a
+# certificate with the exact nickname "Secure Boot Self Signing Key".
+# Self-signing is used only for requests whose configured
+# `pesign_certificate_name` is "secure-boot-self-signing".
 self_sign_nssdb_dir = "/etc/sigul-pesign-bridge/self-sign/nssdb"
-
-# Directory containing self-signing certificate material.
-self_sign_cert_dir = "/etc/sigul-pesign-bridge/self-sign/certs"
 
 # Configuration to connect to the Sigul server.
 [sigul]
