@@ -10,7 +10,6 @@ pub(crate) mod pesign;
 mod service;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use anyhow::Context as AnyhowContext;
 #[doc(hidden)]
@@ -28,14 +27,6 @@ pub struct Context {
     /// is set, since signing is done locally and the Sigul TLS credentials are
     /// not required to exist.
     pub(crate) sigul_client: Option<siguldry::v1::client::Client>,
-    /// Serializes `az login` calls made ahead of `az xsign` invocations.
-    ///
-    /// Multiple signing requests can be in flight concurrently (e.g. several
-    /// builds on the same pod), but `az login` writes to a shared MSAL token
-    /// cache on disk; running it concurrently risks corrupting that cache. This
-    /// lock ensures only one login happens at a time. It does not serialize the
-    /// `az xsign sign-file` calls themselves, only the login step.
-    pub(crate) xsign_login_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Context {
@@ -76,7 +67,6 @@ impl Context {
             runtime_directory,
             config,
             sigul_client,
-            xsign_login_lock: Arc::new(tokio::sync::Mutex::new(())),
         })
     }
 }

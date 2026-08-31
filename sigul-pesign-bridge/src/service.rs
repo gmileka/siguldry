@@ -377,11 +377,12 @@ async fn get_files_from_conn(connection: UnixStream) -> anyhow::Result<(UnixStre
 /// and `AZURE_FEDERATED_TOKEN_FILE` into the pod environment; those are used
 /// to obtain a token via `az login --service-principal --federated-token`.
 ///
-/// `az login` writes to a shared MSAL token cache on disk, so callers must
-/// serialize concurrent calls to this function (e.g. via a shared mutex) to
-/// avoid corrupting that cache when multiple signing requests are in flight
-/// at once.
-async fn az_login_workload_identity() -> anyhow::Result<()> {
+/// The caller supplies a per-request Azure CLI configuration directory. Both
+/// this login command and its subsequent `az xsign` invocation must use it so
+/// concurrent requests have isolated MSAL token caches.
+async fn az_login_workload_identity(
+    azure_config_dir: &std::path::Path,
+) -> anyhow::Result<()> {
     tracing::debug!("Acquiring Azure workload-identity token for 'az login'");
     let client_id = std::env::var("AZURE_CLIENT_ID")
         .context("AZURE_CLIENT_ID is not set; is workload identity configured?")?;
@@ -401,6 +402,7 @@ async fn az_login_workload_identity() -> anyhow::Result<()> {
         .arg(&tenant_id)
         .arg("--federated-token")
         .arg(format!("@{token_file}"))
+        .env("AZURE_CONFIG_DIR", azure_config_dir)
         .kill_on_drop(true);
     let output = command
         .output()
@@ -432,7 +434,7 @@ async fn sign_with_xsign(
     token_name: &str,
     certificate_name: &str,
     xsign_config_dir: &std::path::Path,
-    context: &super::Context,
+    azure_config_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
     let xsign_config_path = xsign_config_dir.join(format!("{}.json", certificate_name));
     if !xsign_config_path.is_file() {
@@ -467,16 +469,7 @@ async fn sign_with_xsign(
 
     tracing::debug!(config = ?xsign_config_path, "xsign configuration file found");
 
-    // Serialize `az login` across concurrent signing requests; the login
-    // step writes to a shared token cache, but the sign-file call itself
-    // is safe to run concurrently once logged in.
-    {
-        tracing::debug!("Waiting to acquire xsign login lock");
-        let _login_guard = context.xsign_login_lock.lock().await;
-        tracing::debug!("Acquired xsign login lock");
-        az_login_workload_identity().await?;
-        tracing::debug!("Releasing xsign login lock");
-    }
+    az_login_workload_identity(azure_config_dir).await?;
 
     let mut command = tokio::process::Command::new("az");
     command
@@ -486,6 +479,7 @@ async fn sign_with_xsign(
         .arg(xsign_config_path)
         .arg("--file-name")
         .arg(&output_path)
+        .env("AZURE_CONFIG_DIR", azure_config_dir)
         .kill_on_drop(true);
     tracing::debug!(?command, "Running 'az xsign sign-file'");
     let output = command
@@ -637,6 +631,15 @@ async fn sign_attached_with_filetype(
         })?;
     let sigul_input = temp_dir.path().join("unsigned_file");
     let sigul_output = temp_dir.path().join("signed_file");
+    let azure_config_dir = temp_dir.path().join("azure-config");
+    tokio::fs::create_dir(&azure_config_dir)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to create Azure CLI configuration directory '{}'",
+                azure_config_dir.display()
+            )
+        })?;
 
     let span = tracing::Span::current();
     let sigul_input = tokio::task::spawn_blocking(move || {
@@ -681,7 +684,7 @@ async fn sign_attached_with_filetype(
                         &request.token_name,
                         &request.certificate_name,
                         &context.config.xsign_config_dir,
-                        context,
+                        &azure_config_dir,
                     )
                     .await
                 } else {
