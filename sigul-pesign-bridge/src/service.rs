@@ -553,20 +553,6 @@ async fn sign_with_self_signed_cert(
         "Self-signing requested; signing binary with local certificate"
     );
 
-    tokio::fs::copy(&input_path, &output_path)
-        .await
-        .with_context(|| {
-            format!(
-                "failed to copy '{}' to '{}' for self-signing",
-                input_path.display(),
-                output_path.display()
-            )
-        })?;
-    tracing::debug!(
-        output = ?output_path,
-        "Copied unsigned file to output path for self-signing"
-    );
-
     // Use pesign with an NSS DB token and certificate nickname.
     let mut command = tokio::process::Command::new("pesign");
     command
@@ -575,7 +561,7 @@ async fn sign_with_self_signed_cert(
         .arg("-c")
         .arg(SELF_SIGNING_CERTIFICATE_NICKNAME)
         .arg("-i")
-        .arg(output_path)
+        .arg(input_path)
         .arg("-o")
         .arg(output_path)
         .arg("-s")
