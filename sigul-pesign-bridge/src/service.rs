@@ -394,6 +394,16 @@ async fn az_login_workload_identity(
         .context("AZURE_FEDERATED_TOKEN_FILE is not set; is workload identity configured?")?;
     tracing::debug!(client_id, tenant_id, token_file, "Running 'az login'");
 
+    let federated_token = tokio::fs::read_to_string(&token_file)
+        .await
+        .with_context(|| format!("failed to read Azure federated token file '{token_file}'"))?;
+    let federated_token = federated_token.trim();
+    if federated_token.is_empty() {
+        return Err(anyhow!(
+            "Azure federated token file '{token_file}' is empty"
+        ));
+    }
+
     let mut command = tokio::process::Command::new("az");
     command
         .arg("login")
@@ -403,7 +413,7 @@ async fn az_login_workload_identity(
         .arg("--tenant")
         .arg(&tenant_id)
         .arg("--federated-token")
-        .arg(format!("@{token_file}"))
+        .arg(federated_token)
         .env("AZURE_CONFIG_DIR", azure_config_dir)
         .kill_on_drop(true);
     let output = command
