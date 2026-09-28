@@ -14,7 +14,7 @@
 //!
 //! To validate your configuration, refer to the `sigul-pesign-bridge config` command.
 
-use std::{num::NonZeroU64, path::PathBuf};
+use std::{collections::HashMap, num::NonZeroU64, path::PathBuf};
 
 use anyhow::{Context, anyhow};
 use serde::{Deserialize, Serialize};
@@ -45,12 +45,17 @@ pub struct Config {
     pub xsign_enabled: bool,
 
     /// Directory containing ESRP xsign configuration files. For a request with
-    /// certificate name `certificate`, the service uses
-    /// `<xsign_config_dir>/certificate.json`.
+    /// signer name, the service uses the corresponding ESRP key code from
+    /// `azl_signer_to_esrp_keycode` to select
+    /// `<xsign_config_dir>/<ESRP key code>.json`.
     ///
     /// This path is only used when `xsign_enabled` is true.
     #[serde(default = "default_xsign_config_dir")]
     pub xsign_config_dir: PathBuf,
+
+    /// Mapping from signer names to ESRP xsign key codes.
+    #[serde(default)]
+    pub azl_signer_to_esrp_keycode: HashMap<String, String>,
 
     /// Sign files locally with `pesign` and the configured NSS DB instead of forwarding
     /// the request to the Sigul server.
@@ -364,6 +369,7 @@ impl Default for Config {
             sigul: Siguldry::default(),
             xsign_enabled: false,
             xsign_config_dir: default_xsign_config_dir(),
+            azl_signer_to_esrp_keycode: HashMap::new(),
             self_sign_enabled: false,
             self_sign_nssdb_dir: default_self_sign_nssdb_dir(),
             socket_acl: vec![],
