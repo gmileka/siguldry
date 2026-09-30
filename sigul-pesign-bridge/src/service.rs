@@ -439,40 +439,17 @@ async fn az_login_workload_identity(
     Ok(())
 }
 
-async fn get_xsign_config(xsign_config_dir: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
-    let mut xsign_config_entries = tokio::fs::read_dir(xsign_config_dir)
-        .await
-        .with_context(|| {
-            format!(
-                "failed to read xsign configuration directory '{}'",
-                xsign_config_dir.display()
-            )
-        })?;
-    let mut xsign_config_paths = Vec::new();
-    while let Some(entry) = xsign_config_entries.next_entry().await.with_context(|| {
-        format!(
-            "failed to enumerate xsign configuration directory '{}'",
-            xsign_config_dir.display()
-        )
-    })? {
-        let path = entry.path();
-        if path.extension().is_some_and(|extension| extension == "json")
-            && tokio::fs::metadata(&path)
-                .await
-                .is_ok_and(|metadata| metadata.is_file())
-        {
-            xsign_config_paths.push(path);
-        }
-    }
-    if xsign_config_paths.len() != 1 {
-        return Err(anyhow!(
-            "expected exactly one JSON file in xsign configuration directory '{}', found {}",
-            xsign_config_dir.display(),
-            xsign_config_paths.len()
-        ));
-    }
-
-    Ok(xsign_config_paths.pop().expect("length checked above"))
+async fn get_xsign_config(
+    xsign_config_dir: &std::path::Path,
+    certificate_name: &str,
+    signer_to_key_code: &std::collections::HashMap<String, String>,
+) -> anyhow::Result<std::path::PathBuf> {
+    let signer_name = certificate_name.replace('-', "_");
+    let key_code = signer_to_key_code
+        .get(&signer_name)
+        .or_else(|| signer_to_key_code.get("default_signer"))
+        .ok_or_else(|| anyhow!("xsign signer mapping does not contain a default_signer entry"))?;
+    Ok(xsign_config_dir.join(format!("{key_code}.json")))
 }
 
 /// Sign a PE binary using Azure's xsign service.
@@ -483,9 +460,11 @@ async fn sign_with_xsign(
     token_name: &str,
     certificate_name: &str,
     xsign_config_dir: &std::path::Path,
+    signer_to_key_code: &std::collections::HashMap<String, String>,
     azure_config_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
-    let requested_xsign_config_path = get_xsign_config(xsign_config_dir).await?;
+    let requested_xsign_config_path =
+        get_xsign_config(xsign_config_dir, certificate_name, signer_to_key_code).await?;
     let xsign_config_path = requested_xsign_config_path.canonicalize().with_context(|| {
         format!(
             "failed to resolve xsign configuration file '{}'",
@@ -744,6 +723,7 @@ async fn sign_attached_with_filetype(
                         &request.token_name,
                         &request.certificate_name,
                         &context.config.xsign_config_dir,
+                        &context.config.azl_signer_to_esrp_keycode,
                         &azure_config_dir,
                     )
                     .await
